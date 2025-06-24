@@ -1,30 +1,34 @@
-
-# Network Traffic Analyzer (CLI Version)
+# 🌐 Network Traffic Analyzer (Streamlit + CLI Version)
 
 ## 📌 Project Overview
 
-This project is a Python-based **Network Traffic Analyzer** that captures live packets on the local network and provides analytical insights such as:
+This project is a Python-based **Network Traffic Analyzer** that captures live packets on the local network and provides real-time traffic insights such as:
 
-* Protocol distribution (TCP, UDP, ICMP, ARP)
-* Source and destination IP statistics
-* Data volume transmitted
-* Detection of unusual traffic patterns (e.g., potential DDoS attempts)
+✔ Protocol distribution (TCP, UDP, ICMP, ARP, etc.)
+✔ Source and destination IP statistics
+✔ Data volume transmitted per device
+✔ Suspicious traffic detection (e.g., potential DDoS indicators)
+✔ Filtering packets by protocol or IP for targeted analysis
+✔ Data export options for captured packets and analysis reports
 
-It is implemented using **Scapy** and runs via the command line. Future versions can include a GUI or web dashboard.
+Implemented using **Scapy** for packet sniffing and **Streamlit** for an interactive web interface.
 
 ---
 
-## 💠 Features
+## 🔠 Features
 
-* Capture live packets using `scapy`
-* Extract essential fields: timestamp, source IP, destination IP, protocol, and size
-* Analyze:
+✅ Capture live network packets (Ethernet, IP, TCP, UDP, ICMP, ARP)
+✅ Extract details: timestamp, MAC addresses, IP addresses, ports, protocol, packet size
+✅ Analyze traffic:
 
-  * Top protocols used
-  * Data volume by source IP
-  * Top sender/receiver IPs
-  * Suspected DDoS IPs based on packet volume
-* Print all output in a well-formatted console view
+* Protocol usage statistics
+* Data volume by source IP
+* Top sender and receiver IPs
+* Detect possible DDoS attacks
+  ✅ Interactive Streamlit Dashboard
+  ✅ Filter captured packets by Protocol or IP
+  ✅ Download filtered packet data as CSV
+  ✅ Automatically saves captured data and analysis report to CSV files for future reference
 
 ---
 
@@ -32,76 +36,80 @@ It is implemented using **Scapy** and runs via the command line. Future versions
 
 ```
 network_traffic_analyzer/
-├── app.py                # Main driver script (run this)
-├── packet_sniffer.py     # Captures and parses packets
-├── analyzer.py           # Analyzes captured packet data
-├── requirements.txt      # Python dependencies
+├── appui.py               # Streamlit Web UI for live monitoring and filtering
+├── packet_sniffer.py      # Captures and parses network packets
+├── analyzer.py            # Analyzes captured packet data
+├── exporter.py            # Handles CSV export functionality
+├── requirements.txt       # Project dependencies
 ```
 
 ---
 
-## 💻 Installation and Setup
+## 💻 Installation & Setup
 
 ### Prerequisites
 
-* Python 3.8+
-* Run with **administrator privileges**
-* For Windows users: Install [Npcap](https://nmap.org/npcap/) (required by Scapy)
+✔ Python 3.8+
+✔ Administrator/root privileges for packet capture
+✔ [Npcap](https://nmap.org/npcap/) (Windows users - required by Scapy)
 
-### 1. Clone the Repository
+---
+
+### Steps to Run
 
 ```bash
+# Clone the repository
 git clone https://github.com/your-username/network_traffic_analyzer.git
 cd network_traffic_analyzer
-```
 
-### 2. Create Virtual Environment (Optional but Recommended)
-
-```bash
+# Optional: Create a virtual environment
 python -m venv .venv
-.\.venv\Scripts\activate   # Windows
-```
+.\.venv\Scripts\activate   # For Windows
 
-### 3. Install Dependencies
-
-```bash
+# Install dependencies
 pip install -r requirements.txt
+
+# Run the Streamlit Dashboard
+streamlit run appui.py
 ```
 
-### 4. Run the Application
+---
+
+## 📊 Usage & Output
+
+* Click **"Start Packet Capture"** to begin monitoring
+* View captured packets in a clean, scrollable table
+* Apply filters by protocol or IP to isolate specific traffic
+* Download filtered packets as CSV
+* Automatically saves:
+
+  * Full captured packets: `auto_saved_packets.csv`
+  * Traffic analysis report: `analysis_report.csv`
+* Analysis includes:
+
+  * Protocol usage breakdown
+  * Data sent per device
+  * Top source/destination IPs
+  * Suspicious traffic alerts (DDoS indicators)
+
+---
+
+## 🛠 Dependencies
 
 ```bash
-python app.py
+pip install scapy streamlit pandas
 ```
 
 ---
 
-## 🔐 Notes
+## 📚 Future Enhancements
 
-* Run the script with administrator/root access to allow raw packet capture.
-* To sniff indefinitely (instead of limiting to 1000 packets), modify `start_sniffing(packet_count=1000)` in `app.py`.
-
----
-
-## 📚 Dependencies
-
-* `scapy`
-
-Install using:
-
-```bash
-pip install scapy
-```
+* Real-time traffic graphs and charts
+* Filtering by port numbers
+* PDF export for reports
+* Live traffic alerts within UI
+* More advanced anomaly detection
 
 ---
 
-## 📊 Future Enhancements
-
-* Add GUI/web dashboard using Streamlit or Dash
-* Enable filtering by protocol or IP
-* Allow saving analysis results in CSV or PDF format
-* Include port-level analysis
-
----
-
-
+**Note:** Always run with admin/root access to enable proper packet sniffing.
