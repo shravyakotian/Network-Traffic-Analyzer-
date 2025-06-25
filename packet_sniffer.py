@@ -3,9 +3,8 @@ from scapy.layers.inet import IP, TCP, UDP, ICMP
 from scapy.layers.l2 import ARP, Ether
 from datetime import datetime
 
-captured_packets = []
 
-def process_packet(packet):
+def process_packet(packet, live_callback=None, terminal_live=False):
     proto = "Unknown"
     src_ip = "N/A"
     dst_ip = "N/A"
@@ -64,18 +63,30 @@ def process_packet(packet):
         'length': len(packet)
     }
 
-    captured_packets.append(packet_data)
+    # Live update in terminal
+    if terminal_live:
+        print(f"[{packet_data['timestamp']}] {proto} | {src_ip}:{src_port} -> {dst_ip}:{dst_port} | Size: {packet_data['length']} bytes")
+
+    # Live update in Streamlit
+    if live_callback:
+        live_callback(packet_data)
+
+    return packet_data
 
 
-def start_sniffing(packet_count=1000, protocol_filter=None, ip_filter=None):
+def start_sniffing(packet_count=1000, protocol_filter=None, ip_filter=None, live_callback=None, terminal_live=False):
     """
-    Starts packet capture with optional protocol or IP filtering.
+    Starts packet capture with optional protocol/IP filtering and live UI or terminal updates.
 
     :param packet_count: Number of packets to capture
-    :param protocol_filter: Example - 'tcp', 'udp', 'icmp', 'arp' (Optional)
-    :param ip_filter: Specific IP to filter (Optional)
+    :param protocol_filter: 'tcp', 'udp', 'icmp', etc. (Optional)
+    :param ip_filter: Filter by specific IP (Optional)
+    :param live_callback: Function to send live packet data to UI (Optional)
+    :param terminal_live: If True, prints packets live in terminal (Optional)
     """
     print(f"\n[INFO] Starting packet capture for {packet_count} packets...\n")
+
+    captured_packets = []
 
     capture_filter = ""
 
@@ -87,7 +98,16 @@ def start_sniffing(packet_count=1000, protocol_filter=None, ip_filter=None):
             capture_filter += " and "
         capture_filter += f"host {ip_filter}"
 
-    sniff(count=packet_count, prn=process_packet, iface=conf.iface, filter=capture_filter if capture_filter else None)
+    def handle_packet(pkt):
+        data = process_packet(pkt, live_callback, terminal_live)
+        captured_packets.append(data)
+
+    sniff(
+        count=packet_count,
+        prn=handle_packet,
+        iface=conf.iface,
+        filter=capture_filter if capture_filter else None
+    )
 
     print("[INFO] Packet capture complete.\n")
     return captured_packets
