@@ -7,55 +7,101 @@ import pandas as pd
 st.set_page_config(page_title="Network Traffic Analyzer", layout="centered")
 
 st.title("🌐 Network Traffic Analyzer")
-st.write("Monitor live network traffic, filter by protocol or IP, view statistics, and detect possible DDoS activity.")
+st.write(
+    "Monitor live network traffic, select display fields, filter captured packets, view statistics, and detect possible DDoS activity."
+)
 
 st.divider()
 
+# Sidebar - Settings
+st.sidebar.header("🔧 Filter & Capture Settings")
+
+available_fields = {
+    "S.No": "S.No",
+    "Timestamp": "timestamp",
+    "Source MAC": "src_mac",
+    "Destination MAC": "dst_mac",
+    "Source IP": "src_ip",
+    "Destination IP": "dst_ip",
+    "Source Port": "src_port",
+    "Destination Port": "dst_port",
+    "Protocol": "protocol",
+    "Packet Size": "length"
+}
+
+st.sidebar.markdown("✅ **Select fields to display/export**")
+
+# Checkbox list for selecting fields (individual checkboxes)
+selected_display_fields = []
+for label in available_fields.keys():
+    if st.sidebar.checkbox(label, value=False):
+        selected_display_fields.append(label)
+
+packet_limit = st.sidebar.number_input("🔢 Number of packets to capture", min_value=10, max_value=10000, value=1000, step=100)
+
+# Live placeholder
+live_placeholder = st.empty()
+
+# Session state to store packets
+if "packets" not in st.session_state:
+    st.session_state["packets"] = []
+
+# Start Capture
 if st.button("🚀 Start Packet Capture"):
-    st.info("Capturing packets... Please wait.")
-    packets = start_sniffing(packet_count=1000)
 
-    st.success("✅ Packet capture complete!")
-
-    auto_save_to_csv(packets)
-
-    st.subheader("📥 Captured Packets")
-
-    if packets:
-        for idx, pkt in enumerate(packets, 1):
-            pkt["S.No"] = idx
-        df = pd.DataFrame(packets)
-        df = df[["S.No", "timestamp", "src_mac", "dst_mac", "src_ip", "dst_ip", "src_port", "dst_port", "protocol", "length"]]
-
-        # Filter Options
-        st.sidebar.header("🔍 Filter Options")
-        protocols = ["All"] + sorted(df["protocol"].unique())
-        selected_protocol = st.sidebar.selectbox("Filter by Protocol", protocols)
-
-        ip_filter = st.sidebar.text_input("Filter by IP (source or destination)")
-
-        filtered_df = df
-
-        if selected_protocol != "All":
-            filtered_df = filtered_df[filtered_df["protocol"] == selected_protocol]
-
-        if ip_filter:
-            filtered_df = filtered_df[(filtered_df["src_ip"] == ip_filter) | (filtered_df["dst_ip"] == ip_filter)]
-
-        st.dataframe(filtered_df, use_container_width=True)
-
-        download_link = generate_csv_download_link(filtered_df.to_dict(orient="records"), filename="filtered_packets.csv")
-        st.markdown(download_link, unsafe_allow_html=True)
-
+    if not selected_display_fields:
+        st.warning("⚠️ Please select at least one field to display before capturing packets.")
     else:
-        st.warning("No packets captured.")
+        st.info(f"Capturing up to {packet_limit} packets... Live updates below:")
+
+        live_packets = []
+
+        def show_live_packet(packet_data):
+            live_packets.append(packet_data)
+            temp_df = pd.DataFrame(live_packets)
+            temp_df["S.No"] = range(1, len(temp_df) + 1)
+            mapped_columns = [available_fields[field] for field in selected_display_fields]
+            live_placeholder.dataframe(temp_df[mapped_columns], use_container_width=True)
+
+        packets = start_sniffing(packet_count=packet_limit, live_callback=show_live_packet)
+        st.session_state["packets"] = packets
+        st.success(f"✅ Packet capture complete! Total packets: {len(packets)}")
+        auto_save_to_csv(packets)
+
+# If packets exist, filtering & analysis
+if st.session_state["packets"]:
+    st.divider()
+    st.subheader("📥 Captured Packets Summary")
+
+    df = pd.DataFrame(st.session_state["packets"])
+    df["S.No"] = range(1, len(df) + 1)
+
+    available_protocols = ["All"] + sorted(df["protocol"].dropna().unique())
+    selected_protocol = st.selectbox("Filter by Protocol", available_protocols)
+
+    all_ips = pd.concat([df["src_ip"], df["dst_ip"]]).dropna().unique()
+    available_ips = ["All"] + sorted(all_ips)
+    selected_ip = st.selectbox("Filter by IP (source or destination)", available_ips)
+
+    filtered_df = df.copy()
+    if selected_protocol != "All":
+        filtered_df = filtered_df[filtered_df["protocol"] == selected_protocol]
+    if selected_ip != "All":
+        filtered_df = filtered_df[(filtered_df["src_ip"] == selected_ip) | (filtered_df["dst_ip"] == selected_ip)]
+
+    mapped_columns = [available_fields[field] for field in selected_display_fields]
+    st.dataframe(filtered_df[mapped_columns], use_container_width=True)
+
+    download_link = generate_csv_download_link(
+        filtered_df[mapped_columns].to_dict(orient="records"),
+        filename="filtered_packets.csv"
+    )
+    st.markdown(download_link, unsafe_allow_html=True)
 
     st.divider()
+    st.subheader("📊 Packet Analysis Results (Filtered Packets)")
 
-    st.subheader("📊 Packet Analysis Results")
-
-    proto_stats, data_by_src, top_src, top_dst, ddos_list = analyze_packets(packets)
-
+    proto_stats, data_by_src, top_src, top_dst, ddos_list = analyze_packets(filtered_df.to_dict(orient="records"))
     save_analysis_to_csv(proto_stats, data_by_src, top_src, top_dst, ddos_list)
 
     with st.expander("📌 Protocol Usage", expanded=True):
