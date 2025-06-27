@@ -2,9 +2,14 @@ from scapy.all import sniff, conf
 from scapy.layers.inet import IP, TCP, UDP, ICMP
 from scapy.layers.l2 import ARP, Ether
 from datetime import datetime
+import threading
+
+continuous_packets = []  # Global packet storage
+_lock = threading.Lock()  # Thread safety
+stop_sniffing_flag = False  # Control flag
 
 
-def process_packet(packet, live_callback=None, terminal_live=False):
+def process_packet(packet, live_callback=None, terminal_live=False, pkt_index=None):
     proto = "Unknown"
     src_ip = "N/A"
     dst_ip = "N/A"
@@ -48,8 +53,6 @@ def process_packet(packet, live_callback=None, terminal_live=False):
 
     except Exception:
         proto = "Malformed"
-        src_ip = "N/A"
-        dst_ip = "N/A"
 
     packet_data = {
         'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -63,30 +66,23 @@ def process_packet(packet, live_callback=None, terminal_live=False):
         'length': len(packet)
     }
 
-    # Live update in terminal
-    if terminal_live:
-        print(f"[{packet_data['timestamp']}] {proto} | {src_ip}:{src_port} -> {dst_ip}:{dst_port} | Size: {packet_data['length']} bytes")
+    if terminal_live and pkt_index is not None:
+        print(f"{pkt_index}. [{packet_data['timestamp']}] {proto} | "
+              f"{src_ip}:{src_port} → {dst_ip}:{dst_port} | "
+              f"MAC: {src_mac} → {dst_mac} | Size: {packet_data['length']} bytes")
 
-    # Live update in Streamlit
     if live_callback:
         live_callback(packet_data)
 
     return packet_data
 
 
-def start_sniffing(packet_count=1000, protocol_filter=None, ip_filter=None, live_callback=None, terminal_live=False):
+def continuous_sniffing(protocol_filter=None, ip_filter=None, terminal_live=False):
     """
-    Starts packet capture with optional protocol/IP filtering and live UI or terminal updates.
-
-    :param packet_count: Number of packets to capture
-    :param protocol_filter: 'tcp', 'udp', 'icmp', etc. (Optional)
-    :param ip_filter: Filter by specific IP (Optional)
-    :param live_callback: Function to send live packet data to UI (Optional)
-    :param terminal_live: If True, prints packets live in terminal (Optional)
+    Threaded continuous packet capture for Terminal/App with safe stop.
     """
-    print(f"\n[INFO] Starting packet capture for {packet_count} packets...\n")
-
-    captured_packets = []
+    global stop_sniffing_flag
+    stop_sniffing_flag = False  # Reset stop flag
 
     capture_filter = ""
 
@@ -99,15 +95,30 @@ def start_sniffing(packet_count=1000, protocol_filter=None, ip_filter=None, live
         capture_filter += f"host {ip_filter}"
 
     def handle_packet(pkt):
-        data = process_packet(pkt, live_callback, terminal_live)
-        captured_packets.append(data)
+        with _lock:
+            pkt_index = len(continuous_packets) + 1
+            data = process_packet(pkt, terminal_live=terminal_live, pkt_index=pkt_index)
+            continuous_packets.append(data)
 
-    sniff(
-        count=packet_count,
-        prn=handle_packet,
-        iface=conf.iface,
-        filter=capture_filter if capture_filter else None
-    )
+    def stop_condition(pkt):
+        return stop_sniffing_flag
 
-    print("[INFO] Packet capture complete.\n")
-    return captured_packets
+    thread = threading.Thread(target=sniff, kwargs={
+        'prn': handle_packet,
+        'iface': conf.iface,
+        'filter': capture_filter if capture_filter else None,
+        'store': False,
+        'stop_filter': stop_condition
+    }, daemon=True)
+
+    thread.start()
+    print("[INFO] Continuous background sniffing started.")
+
+
+def stop_sniffing():
+    """
+    Safely stop packet capture.
+    """
+    global stop_sniffing_flag
+    stop_sniffing_flag = True
+    print("[INFO] Sniffing stop requested.")
