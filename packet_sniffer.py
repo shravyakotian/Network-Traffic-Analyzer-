@@ -1,6 +1,7 @@
-from scapy.all import sniff, conf
+from scapy.all import sniff, conf, Raw
 from scapy.layers.inet import IP, TCP, UDP, ICMP
 from scapy.layers.l2 import ARP, Ether
+from scapy.layers.dns import DNS
 from datetime import datetime
 import threading
 
@@ -8,6 +9,21 @@ continuous_packets = []  # Global packet storage
 _lock = threading.Lock()  # Thread safety
 stop_sniffing_flag = False  # Control flag
 
+# Known port mappings for protocol identification
+PORT_PROTOCOLS = {
+    80: "HTTP",
+    443: "HTTPS",
+    53: "DNS",
+    21: "FTP",
+    22: "SSH",
+    25: "SMTP",
+    110: "POP3",
+    143: "IMAP",
+    123: "NTP",
+    445: "SMB",
+    3306: "MySQL",
+    5432: "PostgreSQL"
+}
 
 def process_packet(packet, live_callback=None, terminal_live=False, pkt_index=None):
     proto = "Unknown"
@@ -17,6 +33,8 @@ def process_packet(packet, live_callback=None, terminal_live=False, pkt_index=No
     dst_port = "N/A"
     src_mac = "N/A"
     dst_mac = "N/A"
+    dns_query = "N/A"
+    http_payload = "N/A"
 
     try:
         if Ether in packet:
@@ -28,13 +46,15 @@ def process_packet(packet, live_callback=None, terminal_live=False, pkt_index=No
             dst_ip = packet[IP].dst
 
             if TCP in packet:
-                proto = 'TCP'
-                src_port = packet[TCP].sport
-                dst_port = packet[TCP].dport
+                src_port = str(packet[TCP].sport)
+                dst_port = str(packet[TCP].dport)
+                proto = PORT_PROTOCOLS.get(int(dst_port)) or PORT_PROTOCOLS.get(int(src_port)) or "TCP"
+
             elif UDP in packet:
-                proto = 'UDP'
-                src_port = packet[UDP].sport
-                dst_port = packet[UDP].dport
+                src_port = str(packet[UDP].sport)
+                dst_port = str(packet[UDP].dport)
+                proto = PORT_PROTOCOLS.get(int(dst_port)) or PORT_PROTOCOLS.get(int(src_port)) or "UDP"
+
             elif ICMP in packet:
                 proto = 'ICMP'
             else:
@@ -51,6 +71,18 @@ def process_packet(packet, live_callback=None, terminal_live=False, pkt_index=No
         else:
             proto = packet.name
 
+        # DNS Query Extraction
+        if packet.haslayer(DNS) and packet[DNS].qd is not None:
+            dns_query = packet[DNS].qd.qname.decode(errors="ignore")
+
+        # HTTP Payload preview (basic, not full reconstruction)
+        if packet.haslayer(Raw) and (proto == "HTTP" or int(dst_port) == 80 or int(src_port) == 80):
+            raw_data = packet[Raw].load
+            try:
+                http_payload = raw_data.decode(errors="ignore")[:50] + "..." if len(raw_data) > 50 else raw_data.decode(errors="ignore")
+            except:
+                http_payload = "Binary/Undecodable Payload"
+
     except Exception:
         proto = "Malformed"
 
@@ -63,13 +95,16 @@ def process_packet(packet, live_callback=None, terminal_live=False, pkt_index=No
         'src_port': src_port,
         'dst_port': dst_port,
         'protocol': proto,
+        'dns_query': dns_query,
+        'http_payload': http_payload,
         'length': len(packet)
     }
 
     if terminal_live and pkt_index is not None:
         print(f"{pkt_index}. [{packet_data['timestamp']}] {proto} | "
               f"{src_ip}:{src_port} → {dst_ip}:{dst_port} | "
-              f"MAC: {src_mac} → {dst_mac} | Size: {packet_data['length']} bytes")
+              f"MAC: {src_mac} → {dst_mac} | Size: {packet_data['length']} bytes | "
+              f"DNS: {dns_query} | HTTP: {http_payload}")
 
     if live_callback:
         live_callback(packet_data)
@@ -78,17 +113,12 @@ def process_packet(packet, live_callback=None, terminal_live=False, pkt_index=No
 
 
 def continuous_sniffing(protocol_filter=None, ip_filter=None, terminal_live=False):
-    """
-    Threaded continuous packet capture for Terminal/App with safe stop.
-    """
     global stop_sniffing_flag
-    stop_sniffing_flag = False  # Reset stop flag
+    stop_sniffing_flag = False
 
     capture_filter = ""
-
     if protocol_filter:
         capture_filter += protocol_filter.lower()
-
     if ip_filter:
         if capture_filter:
             capture_filter += " and "
@@ -116,9 +146,6 @@ def continuous_sniffing(protocol_filter=None, ip_filter=None, terminal_live=Fals
 
 
 def stop_sniffing():
-    """
-    Safely stop packet capture.
-    """
     global stop_sniffing_flag
     stop_sniffing_flag = True
     print("[INFO] Sniffing stop requested.")
