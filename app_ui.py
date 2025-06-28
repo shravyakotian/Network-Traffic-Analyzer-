@@ -4,11 +4,12 @@ from analyzer import analyze_packets
 from exporter import generate_csv_download_link, save_analysis_to_csv
 import pandas as pd
 import time
+from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Network Traffic Analyzer", layout="centered")
 
 st.title("🌐 Network Traffic Analyzer")
-st.write("Monitor live network traffic, select display fields, filter captured packets, view statistics, and detect possible DDoS activity.")
+st.write("Monitor live network traffic, select display fields, filter captured packets by time, view statistics, and detect possible DDoS activity.")
 
 st.divider()
 
@@ -25,7 +26,9 @@ available_fields = {
     "Source Port": "src_port",
     "Destination Port": "dst_port",
     "Protocol": "protocol",
-    "Packet Size": "length"
+    "Packet Size": "length",
+    "DNS Query": "dns_query",
+    "HTTP Payload": "http_payload"
 }
 
 st.sidebar.markdown("✅ **Select fields to display/export**")
@@ -38,6 +41,8 @@ for label in available_fields.keys():
 # Continuous monitoring settings
 st.sidebar.header("⚡ Continuous Monitor Settings")
 refresh_interval = st.sidebar.number_input("🔄 Dashboard Refresh Interval (seconds)", min_value=1, max_value=10, value=2, step=1)
+
+time_filter = st.sidebar.selectbox("⏱️ Display Packets for", ["Last 5 Minutes", "Last 30 Minutes", "Last 1 Hour", "All"])
 
 if "monitoring" not in st.session_state:
     st.session_state["monitoring"] = False
@@ -54,21 +59,41 @@ if st.button("🛑 Stop Continuous Monitoring"):
     st.session_state["monitoring"] = False
     st.warning("Continuous monitoring stopped. Data remains visible.")
 
-# Live Dashboard with Live Analysis
+# Function to filter by time
+def filter_by_time(packets, time_range):
+    if time_range == "All":
+        return packets
+    cutoff = datetime.now()
+    if time_range == "Last 5 Minutes":
+        cutoff -= timedelta(minutes=5)
+    elif time_range == "Last 30 Minutes":
+        cutoff -= timedelta(minutes=30)
+    elif time_range == "Last 1 Hour":
+        cutoff -= timedelta(hours=1)
+
+    return [pkt for pkt in packets if datetime.strptime(pkt['timestamp'], "%Y-%m-%d %H:%M:%S") >= cutoff]
+
+# Live Dashboard
 if st.session_state.get("monitoring"):
     st.info(f"Dashboard auto-refreshing every {refresh_interval} seconds...")
 
     packet_snapshot = continuous_packets.copy()
-    df = pd.DataFrame(packet_snapshot)
+    filtered_packets = filter_by_time(packet_snapshot, time_filter)
+    df = pd.DataFrame(filtered_packets)
 
     if not df.empty:
         df["S.No"] = range(1, len(df) + 1)
+
+        for field in available_fields.values():
+            if field not in df.columns:
+                df[field] = "N/A"
+
         mapped_columns = [available_fields[field] for field in selected_display_fields if field in available_fields]
 
         if mapped_columns:
             st.dataframe(df[mapped_columns], use_container_width=True)
 
-        st.session_state["packets"] = packet_snapshot  # Keep latest
+        st.session_state["packets"] = packet_snapshot
 
         st.divider()
         st.subheader("📊 Live Packet Analysis")
@@ -96,13 +121,18 @@ if st.session_state.get("monitoring"):
     time.sleep(refresh_interval)
     st.rerun()
 
-# Results stay after Stop
+# Results after Stop
 if st.session_state["packets"] and not st.session_state.get("monitoring"):
     st.divider()
     st.subheader("📥 Captured Packets Summary")
 
-    df = pd.DataFrame(st.session_state["packets"])
+    filtered_packets = filter_by_time(st.session_state["packets"], time_filter)
+    df = pd.DataFrame(filtered_packets)
     df["S.No"] = range(1, len(df) + 1)
+
+    for field in available_fields.values():
+        if field not in df.columns:
+            df[field] = "N/A"
 
     available_protocols = ["All"] + sorted(df["protocol"].dropna().unique())
     selected_protocol = st.selectbox("Filter by Protocol", available_protocols)
