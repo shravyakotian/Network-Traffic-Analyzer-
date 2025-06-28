@@ -1,9 +1,30 @@
 import os
 import time
+from datetime import datetime, timedelta
 from packet_sniffer import continuous_sniffing, continuous_packets, _lock, stop_sniffing
 from analyzer import analyze_packets
 from exporter import auto_save_to_csv, save_analysis_to_csv
 import pandas as pd
+
+
+def filter_by_time(packets, time_range):
+    """
+    Filters packets by selected time range.
+    """
+    if time_range == "All":
+        return packets
+
+    cutoff = datetime.now()
+    if time_range == "Last 5 Minutes":
+        cutoff -= timedelta(minutes=5)
+    elif time_range == "Last 30 Minutes":
+        cutoff -= timedelta(minutes=30)
+    elif time_range == "Last 1 Hour":
+        cutoff -= timedelta(hours=1)
+
+    filtered = [pkt for pkt in packets if datetime.strptime(pkt['timestamp'], "%Y-%m-%d %H:%M:%S") >= cutoff]
+    return filtered
+
 
 def run_terminal_mode():
     print("\n===============================")
@@ -18,6 +39,21 @@ def run_terminal_mode():
         refresh_interval = 1
         print("[INFO] Invalid input, using default 1 seconds.")
 
+    print("\nDisplay Packets for:")
+    print("1️⃣ Last 5 Minutes")
+    print("2️⃣ Last 30 Minutes")
+    print("3️⃣ Last 1 Hour")
+    print("4️⃣ All")
+
+    choice = input("Select option (1/2/3/4): ").strip()
+    time_option = "All"
+    if choice == "1":
+        time_option = "Last 5 Minutes"
+    elif choice == "2":
+        time_option = "Last 30 Minutes"
+    elif choice == "3":
+        time_option = "Last 1 Hour"
+
     continuous_sniffing(terminal_live=True)
 
     try:
@@ -28,16 +64,18 @@ def run_terminal_mode():
             with _lock:
                 snapshot = continuous_packets.copy()
 
-            if len(snapshot) > prev_count:
-                print(f"\n✅ Total Packets Captured: {len(snapshot)}")
+            filtered_snapshot = filter_by_time(snapshot, time_option)
+
+            if len(filtered_snapshot) > prev_count:
+                print(f"\n✅ Total Packets Captured (Filtered): {len(filtered_snapshot)}")
 
                 print("\n📥 Latest Packets:\n")
-                for idx, pkt in enumerate(snapshot[-5:], len(snapshot) - 4):
+                for idx, pkt in enumerate(filtered_snapshot[-5:], len(filtered_snapshot) - 4):
                     print(f"{idx}. [{pkt['protocol']}] {pkt['src_ip']}:{pkt['src_port']} → {pkt['dst_ip']}:{pkt['dst_port']} | "
                           f"MAC: {pkt['src_mac']} → {pkt['dst_mac']} | Size: {pkt['length']} bytes")
 
                 print("\n📊 **Live Packet Analysis:**\n")
-                proto_stats, data_by_src, top_src, top_dst, ddos_list = analyze_packets(snapshot)
+                proto_stats, data_by_src, top_src, top_dst, ddos_list = analyze_packets(filtered_snapshot)
 
                 print("🔹 **Protocol Usage:**")
                 for proto, count in proto_stats.items():
@@ -62,7 +100,7 @@ def run_terminal_mode():
                 else:
                     print("- No DDoS-like activity detected.")
 
-                prev_count = len(snapshot)
+                prev_count = len(filtered_snapshot)
 
     except KeyboardInterrupt:
         print("\n[INFO] Capture stopped by user.\n")
