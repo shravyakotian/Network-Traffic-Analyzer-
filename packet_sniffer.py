@@ -2,14 +2,15 @@ from scapy.all import sniff, conf, Raw
 from scapy.layers.inet import IP, TCP, UDP, ICMP
 from scapy.layers.l2 import ARP, Ether
 from scapy.layers.dns import DNS
+from scapy.layers.tls.all import TLSClientHello, TLS_Ext_ServerName
 from datetime import datetime
 import threading
+import socket
 
-continuous_packets = []  # Global packet storage
-_lock = threading.Lock()  # Thread safety
-stop_sniffing_flag = False  # Control flag
+continuous_packets = []
+_lock = threading.Lock()
+stop_sniffing_flag = False
 
-# Known port mappings for protocol identification
 PORT_PROTOCOLS = {
     80: "HTTP",
     443: "HTTPS",
@@ -25,10 +26,20 @@ PORT_PROTOCOLS = {
     5432: "PostgreSQL"
 }
 
+
+def resolve_domain(ip):
+    try:
+        return socket.gethostbyaddr(ip)[0]
+    except:
+        return ip  # Fallback to IP if domain unknown
+
+
 def process_packet(packet, live_callback=None, terminal_live=False, pkt_index=None):
     proto = "Unknown"
     src_ip = "N/A"
     dst_ip = "N/A"
+    src_domain = "N/A"
+    dst_domain = "N/A"
     src_port = "N/A"
     dst_port = "N/A"
     src_mac = "N/A"
@@ -44,6 +55,8 @@ def process_packet(packet, live_callback=None, terminal_live=False, pkt_index=No
         if IP in packet:
             src_ip = packet[IP].src
             dst_ip = packet[IP].dst
+            src_domain = resolve_domain(src_ip)
+            dst_domain = resolve_domain(dst_ip)
 
             if TCP in packet:
                 src_port = str(packet[TCP].sport)
@@ -75,13 +88,32 @@ def process_packet(packet, live_callback=None, terminal_live=False, pkt_index=No
         if packet.haslayer(DNS) and packet[DNS].qd is not None:
             dns_query = packet[DNS].qd.qname.decode(errors="ignore")
 
-        # HTTP Payload preview (basic, not full reconstruction)
-        if packet.haslayer(Raw) and (proto == "HTTP" or int(dst_port) == 80 or int(src_port) == 80):
-            raw_data = packet[Raw].load
+        # Detect SNI (Domain Name from HTTPS/TLS)
+        if packet.haslayer(TLSClientHello):
+            tls = packet[TLSClientHello]
+            for ext in tls.ext:
+                if isinstance(ext, TLS_Ext_ServerName):
+                    sni_domain = ext.servernames[0].servername.decode(errors="ignore")
+                    proto = "HTTPS (SNI)"
+                    dst_domain = sni_domain
+
+        # Full raw payload capture
+        raw_data = None
+        if packet.haslayer(Raw):
             try:
-                http_payload = raw_data.decode(errors="ignore")[:50] + "..." if len(raw_data) > 50 else raw_data.decode(errors="ignore")
+                raw_data = packet[Raw].load.decode(errors="ignore")
             except:
-                http_payload = "Binary/Undecodable Payload"
+                raw_data = None
+
+        if raw_data:
+            if raw_data.startswith(("GET ", "POST ", "HEAD ", "PUT ", "DELETE ", "OPTIONS ", "HTTP/")):
+                proto = "HTTP"
+            elif "USER " in raw_data or "PASS " in raw_data:
+                proto = "FTP"
+            elif raw_data.startswith("SSH-"):
+                proto = "SSH"
+
+            http_payload = raw_data  # ✅ Full data, not truncated
 
     except Exception:
         proto = "Malformed"
@@ -92,6 +124,8 @@ def process_packet(packet, live_callback=None, terminal_live=False, pkt_index=No
         'dst_mac': dst_mac,
         'src_ip': src_ip,
         'dst_ip': dst_ip,
+        'src_domain': src_domain,
+        'dst_domain': dst_domain,
         'src_port': src_port,
         'dst_port': dst_port,
         'protocol': proto,
@@ -102,7 +136,7 @@ def process_packet(packet, live_callback=None, terminal_live=False, pkt_index=No
 
     if terminal_live and pkt_index is not None:
         print(f"{pkt_index}. [{packet_data['timestamp']}] {proto} | "
-              f"{src_ip}:{src_port} → {dst_ip}:{dst_port} | "
+              f"{src_ip} ({src_domain}):{src_port} → {dst_ip} ({dst_domain}):{dst_port} | "
               f"MAC: {src_mac} → {dst_mac} | Size: {packet_data['length']} bytes | "
               f"DNS: {dns_query} | HTTP: {http_payload}")
 
