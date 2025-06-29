@@ -9,7 +9,7 @@ import pandas as pd
 
 def filter_by_time(packets, time_range):
     """
-    Filters packets by selected time range.
+    Filters captured packets based on selected time range.
     """
     if time_range == "All":
         return packets
@@ -22,11 +22,13 @@ def filter_by_time(packets, time_range):
     elif time_range == "Last 1 Hour":
         cutoff -= timedelta(hours=1)
 
-    filtered = [pkt for pkt in packets if datetime.strptime(pkt['timestamp'], "%Y-%m-%d %H:%M:%S") >= cutoff]
-    return filtered
+    return [pkt for pkt in packets if datetime.strptime(pkt['timestamp'], "%Y-%m-%d %H:%M:%S") >= cutoff]
 
 
 def run_terminal_mode():
+    """
+    Runs packet capture and analysis in terminal mode with real-time statistics.
+    """
     print("\n===============================")
     print("      Terminal Packet Capture")
     print("===============================\n")
@@ -37,7 +39,7 @@ def run_terminal_mode():
             raise ValueError
     except ValueError:
         refresh_interval = 1
-        print("[INFO] Invalid input, using default 1 seconds.")
+        print("[INFO] Invalid input, using default 1 second.")
 
     print("\nDisplay Packets for:")
     print("1️⃣ Last 5 Minutes")
@@ -74,26 +76,26 @@ def run_terminal_mode():
                     print(f"{idx}. [{pkt['protocol']}] {pkt['src_ip']}:{pkt['src_port']} → {pkt['dst_ip']}:{pkt['dst_port']} | "
                           f"MAC: {pkt['src_mac']} → {pkt['dst_mac']} | Size: {pkt['length']} bytes")
 
-                print("\n📊 **Live Packet Analysis:**\n")
+                print("\n📊 Live Packet Analysis:\n")
                 proto_stats, data_by_src, top_src, top_dst, ddos_list = analyze_packets(filtered_snapshot)
 
-                print("🔹 **Protocol Usage:**")
+                print("🔹 Protocol Usage:")
                 for proto, count in proto_stats.items():
                     print(f"- {proto}: {count} packets")
 
-                print("\n🔹 **Data Volume by Source IP:**")
+                print("\n🔹 Data Volume by Source IP:")
                 for ip, total in data_by_src.items():
                     print(f"- {ip}: {total} bytes")
 
-                print("\n🔹 **Top 3 Source IPs:**")
+                print("\n🔹 Top 3 Source IPs:")
                 for ip, count in top_src[:3]:
                     print(f"- {ip}: {count} packets")
 
-                print("\n🔹 **Top 3 Destination IPs:**")
+                print("\n🔹 Top 3 Destination IPs:")
                 for ip, count in top_dst[:3]:
                     print(f"- {ip}: {count} packets")
 
-                print("\n🚨 **Potential DDoS Sources:**")
+                print("\n🚨 Potential DDoS Sources:")
                 if ddos_list:
                     for ip in ddos_list:
                         print(f"- ⚠️ {ip}")
@@ -118,6 +120,9 @@ def run_terminal_mode():
 
 
 def run_streamlit_app():
+    """
+    Launches the Streamlit web interface.
+    """
     print("\n[INFO] Launching Streamlit App in browser...\n")
     os.system("streamlit run app_ui.py")
 
