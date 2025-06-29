@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="Network Traffic Analyzer", layout="centered")
 
 st.title("🌐 Network Traffic Analyzer")
-st.write("Monitor live network traffic, select display fields, filter captured packets by time, view statistics, and detect possible DDoS activity.")
+st.write("Monitor live network traffic, select display fields, filter captured packets by custom time, view statistics, and detect possible DDoS activity.")
 
 st.divider()
 
@@ -23,6 +23,8 @@ available_fields = {
     "Destination MAC": "dst_mac",
     "Source IP": "src_ip",
     "Destination IP": "dst_ip",
+    "Source Domain": "src_domain",
+    "Destination Domain": "dst_domain",
     "Source Port": "src_port",
     "Destination Port": "dst_port",
     "Protocol": "protocol",
@@ -42,7 +44,11 @@ for label in available_fields.keys():
 st.sidebar.header("⚡ Continuous Monitor Settings")
 refresh_interval = st.sidebar.number_input("🔄 Dashboard Refresh Interval (seconds)", min_value=1, max_value=10, value=2, step=1)
 
-time_filter = st.sidebar.selectbox("⏱️ Display Packets for", ["Last 5 Minutes", "Last 30 Minutes", "Last 1 Hour", "All"])
+# Custom time filter
+st.sidebar.markdown("⏱️ **Display Packets for Custom Time Range**")
+time_unit = st.sidebar.selectbox("Time Unit", ["Minutes", "Hours"])
+time_value = st.sidebar.number_input("Enter Value", min_value=1, value=5, step=1)
+show_all = st.sidebar.checkbox("Show All Packets", value=False)
 
 if "monitoring" not in st.session_state:
     st.session_state["monitoring"] = False
@@ -59,26 +65,25 @@ if st.button("🛑 Stop Continuous Monitoring"):
     st.session_state["monitoring"] = False
     st.warning("Continuous monitoring stopped. Data remains visible.")
 
-# Function to filter by time
-def filter_by_time(packets, time_range):
-    if time_range == "All":
+
+# Function to filter by custom time
+def filter_by_time(packets):
+    if show_all:
         return packets
     cutoff = datetime.now()
-    if time_range == "Last 5 Minutes":
-        cutoff -= timedelta(minutes=5)
-    elif time_range == "Last 30 Minutes":
-        cutoff -= timedelta(minutes=30)
-    elif time_range == "Last 1 Hour":
-        cutoff -= timedelta(hours=1)
-
+    if time_unit == "Minutes":
+        cutoff -= timedelta(minutes=time_value)
+    elif time_unit == "Hours":
+        cutoff -= timedelta(hours=time_value)
     return [pkt for pkt in packets if datetime.strptime(pkt['timestamp'], "%Y-%m-%d %H:%M:%S") >= cutoff]
+
 
 # Live Dashboard
 if st.session_state.get("monitoring"):
     st.info(f"Dashboard auto-refreshing every {refresh_interval} seconds...")
 
     packet_snapshot = continuous_packets.copy()
-    filtered_packets = filter_by_time(packet_snapshot, time_filter)
+    filtered_packets = filter_by_time(packet_snapshot)
     df = pd.DataFrame(filtered_packets)
 
     if not df.empty:
@@ -126,7 +131,7 @@ if st.session_state["packets"] and not st.session_state.get("monitoring"):
     st.divider()
     st.subheader("📥 Captured Packets Summary")
 
-    filtered_packets = filter_by_time(st.session_state["packets"], time_filter)
+    filtered_packets = filter_by_time(st.session_state["packets"])
     df = pd.DataFrame(filtered_packets)
     df["S.No"] = range(1, len(df) + 1)
 
