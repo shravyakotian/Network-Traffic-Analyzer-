@@ -4,31 +4,22 @@ from datetime import datetime, timedelta
 from packet_sniffer import continuous_sniffing, continuous_packets, _lock, stop_sniffing
 from analyzer import analyze_packets
 from exporter import auto_save_to_csv, save_analysis_to_csv
-import pandas as pd
 
 
-def filter_by_time(packets, time_range):
-    """
-    Filters captured packets based on selected time range.
-    """
-    if time_range == "All":
+def filter_by_time(packets, time_unit, time_value, show_all):
+    if show_all:
         return packets
 
     cutoff = datetime.now()
-    if time_range == "Last 5 Minutes":
-        cutoff -= timedelta(minutes=5)
-    elif time_range == "Last 30 Minutes":
-        cutoff -= timedelta(minutes=30)
-    elif time_range == "Last 1 Hour":
-        cutoff -= timedelta(hours=1)
+    if time_unit == "minutes":
+        cutoff -= timedelta(minutes=time_value)
+    elif time_unit == "hours":
+        cutoff -= timedelta(hours=time_value)
 
     return [pkt for pkt in packets if datetime.strptime(pkt['timestamp'], "%Y-%m-%d %H:%M:%S") >= cutoff]
 
 
 def run_terminal_mode():
-    """
-    Runs packet capture and analysis in terminal mode with real-time statistics.
-    """
     print("\n===============================")
     print("      Terminal Packet Capture")
     print("===============================\n")
@@ -41,20 +32,46 @@ def run_terminal_mode():
         refresh_interval = 1
         print("[INFO] Invalid input, using default 1 second.")
 
-    print("\nDisplay Packets for:")
-    print("1️⃣ Last 5 Minutes")
-    print("2️⃣ Last 30 Minutes")
-    print("3️⃣ Last 1 Hour")
-    print("4️⃣ All")
+    print("\nDisplay Packets for Time Range:")
 
-    choice = input("Select option (1/2/3/4): ").strip()
-    time_option = "All"
-    if choice == "1":
-        time_option = "Last 5 Minutes"
-    elif choice == "2":
-        time_option = "Last 30 Minutes"
-    elif choice == "3":
-        time_option = "Last 1 Hour"
+    # Strict time unit validation
+    while True:
+        unit_input = input("Select time unit - (m)inutes or (h)ours [default: m]: ").strip().lower()
+        if unit_input == "":
+            unit_input = "m"
+        if unit_input in ["m", "h"]:
+            break
+        print("[ERROR] Invalid input! Please enter 'm' for minutes or 'h' for hours.")
+
+    time_unit = "minutes" if unit_input == "m" else "hours"
+
+    try:
+        time_value = int(input("Enter time value (positive number) [default: 5]: ").strip())
+        if time_value <= 0:
+            raise ValueError
+    except ValueError:
+        time_value = 5
+
+    show_all = input("Show all packets? (y/n) [default: n]: ").strip().lower() == "y"
+
+    # Field selection
+    print("\nAvailable Fields to Display:")
+    valid_fields = [
+        "timestamp", "src_mac", "dst_mac", "src_ip", "dst_ip",
+        "src_domain", "dst_domain", "src_port", "dst_port",
+        "protocol", "length", "dns_query", "http_payload"
+    ]
+    print(", ".join(valid_fields))
+
+    fields_input = input("Enter fields to display (comma separated) or press Enter to show all: ").strip().lower()
+
+    if not fields_input:
+        selected_fields = valid_fields
+    else:
+        selected_fields = [f.strip() for f in fields_input.split(",") if f.strip() in valid_fields]
+        if not selected_fields:
+            print("[INFO] Invalid selection, displaying all fields.")
+            selected_fields = valid_fields
 
     continuous_sniffing(terminal_live=True)
 
@@ -66,15 +83,20 @@ def run_terminal_mode():
             with _lock:
                 snapshot = continuous_packets.copy()
 
-            filtered_snapshot = filter_by_time(snapshot, time_option)
+            filtered_snapshot = filter_by_time(snapshot, time_unit, time_value, show_all)
 
             if len(filtered_snapshot) > prev_count:
                 print(f"\n✅ Total Packets Captured (Filtered): {len(filtered_snapshot)}")
-
                 print("\n📥 Latest Packets:\n")
+
                 for idx, pkt in enumerate(filtered_snapshot[-5:], len(filtered_snapshot) - 4):
-                    print(f"{idx}. [{pkt['protocol']}] {pkt['src_ip']}:{pkt['src_port']} → {pkt['dst_ip']}:{pkt['dst_port']} | "
-                          f"MAC: {pkt['src_mac']} → {pkt['dst_mac']} | Size: {pkt['length']} bytes")
+                    output_parts = [f"{idx}."]
+                    for field in selected_fields:
+                        value = pkt.get(field, "N/A")
+                        if field == "http_payload" and value and len(value) > 50:
+                            value = value[:50] + "..."
+                        output_parts.append(f"{field}: {value}")
+                    print(" | ".join(output_parts))
 
                 print("\n📊 Live Packet Analysis:\n")
                 proto_stats, data_by_src, top_src, top_dst, ddos_list = analyze_packets(filtered_snapshot)
@@ -120,9 +142,6 @@ def run_terminal_mode():
 
 
 def run_streamlit_app():
-    """
-    Launches the Streamlit web interface.
-    """
     print("\n[INFO] Launching Streamlit App in browser...\n")
     os.system("streamlit run app_ui.py")
 
