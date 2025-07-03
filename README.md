@@ -112,4 +112,85 @@ pip install scapy streamlit pandas
 
 ---
 
+## 🔧 Troubleshooting Network Capture Issues
+
+### If your application is not capturing network traffic, try these solutions:
+
+#### 1. **Run Diagnostic Tool**
+```bash
+python diagnostic.py
+```
+This will check your system configuration and identify potential issues.
+
+#### 2. **Windows-Specific Issues**
+
+**Administrator Privileges:**
+- Right-click on Command Prompt/PowerShell and select "Run as Administrator"
+- Navigate to your project directory and run the application
+
+**Install Npcap:**
+- Download and install Npcap from https://nmap.org/npcap/
+- Npcap is required for packet capture on Windows
+- Make sure to install it with "WinPcap API compatibility" enabled
+
+**Windows Defender:**
+- Temporarily disable Windows Defender real-time protection
+- Go to Windows Security → Virus & threat protection → Manage settings
+- Turn off Real-time protection (temporarily)
+
+**Firewall Settings:**
+- Add Python to Windows Firewall exceptions
+- Allow the application through both private and public networks
+
+#### 3. **Application-Specific Fixes**
+
+**Select Network Interface:**
+- Use the interface selector in the application sidebar
+- Try different interfaces if the default one doesn't work
+
+**Check Selected Fields:**
+- Make sure you have selected at least one field for display in the sidebar
+- Default fields: S.No, Timestamp, Source IP, Destination IP, Protocol, Packet Size
+
+**Generate Network Traffic:**
+- Browse websites, download files, or stream videos to generate traffic
+- The application captures all network traffic, not just your browser
+
+#### 4. **Common Error Messages**
+
+**"No packets captured":**
+- Check if you're running as Administrator (Windows)
+- Verify network interface selection
+- Ensure you have active network traffic
+
+**"Permission denied":**
+- Run the application with Administrator privileges
+- Check if antivirus software is blocking packet capture
+
+**"Interface not found":**
+- Check available interfaces in the diagnostic section
+- Select a different interface from the dropdown
+
+#### 5. **Alternative Testing**
+
+**Test with Terminal Mode:**
+```bash
+python main.py
+```
+This runs the application in terminal mode, which might provide more detailed error messages.
+
+**Manual Scapy Test:**
+```python
+from scapy.all import sniff
+packets = sniff(timeout=10, count=10)
+print(f"Captured {len(packets)} packets")
+```
+
+#### 6. **Corporate/Restricted Networks**
+- Some corporate networks block packet capture
+- VPN software may interfere with packet capture
+- Ask your IT department about network monitoring policies
+
+---
+
 **Note:** Always run with admin/root access to enable proper packet sniffing.

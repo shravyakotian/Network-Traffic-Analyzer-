@@ -1,0 +1,19 @@
+Protocol,Count
+TCP,4
+ICMP,1
+UDP,1
+
+Source IP,Total Data (bytes)
+192.168.0.103,748
+192.168.0.101,120
+
+Top Source IPs,Packet Count
+192.168.0.103,5
+192.168.0.101,1
+
+Top Destination IPs,Packet Count
+192.168.0.101,4
+192.168.0.103,1
+192.168.0.1,1
+
+Potential DDoS Suspects
