@@ -1,1 +1,6 @@
 venv
+*.pdf
+*.csv
+*.json
+*.log
+/__pycache__
