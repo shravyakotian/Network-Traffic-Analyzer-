@@ -1,183 +1,132 @@
 import streamlit as st
-from packet_sniffer import continuous_sniffing, continuous_packets
-from analyzer import analyze_packets
-from exporter import generate_csv_download_link, save_analysis_to_csv
+from enhanced_network_monitor import EnhancedNetworkMonitor
 import pandas as pd
 import time
 from datetime import datetime, timedelta
+import threading
 
-st.set_page_config(page_title="Network Traffic Analyzer", layout="centered")
+st.set_page_config(page_title="Enhanced Network Traffic Monitor", layout="wide")
 
-st.title("🌐 Network Traffic Analyzer")
-st.write("Monitor live network traffic, select display fields, filter captured packets by custom time, view statistics, and detect possible DDoS activity.")
+st.title("🌐 Enhanced Network Traffic Monitor")
+#st.caption("Monitor live browser & network traffic, QUIC, DNS, HTTP, and view top talkers.")
+st.divider()
+
+if 'monitor' not in st.session_state:
+    st.session_state.monitor = EnhancedNetworkMonitor()
+    st.session_state.monitoring = False
+
+monitor = st.session_state.monitor
+
+# Sidebar Controls
+st.sidebar.header("🔧 Monitor Controls")
+refresh_interval = st.sidebar.number_input("Refresh Interval (seconds)", min_value=1, max_value=10, value=2)
+
+if not st.session_state.monitoring:
+    if st.sidebar.button("🚀 Start Monitoring"):
+        st.session_state.monitoring = True
+        monitor.running = True
+        threading.Thread(target=monitor.start_monitoring, daemon=True).start()
+        st.success("Monitoring started.")
+else:
+    if st.sidebar.button("🛑 Stop Monitoring"):
+        monitor.running = False
+        st.session_state.monitoring = False
+        st.warning("Monitoring stopped.")
 
 st.divider()
 
-# Sidebar - Settings
-st.sidebar.header("🔧 Filter & Capture Settings")
+if st.session_state.monitoring:
+    st.info(f"Monitoring is active. Refreshes every {refresh_interval} seconds.")
+else:
+    st.info("Monitoring is stopped. Start to see live stats.")
 
-available_fields = {
-    "S.No": "S.No",
-    "Timestamp": "timestamp",
-    "Source MAC": "src_mac",
-    "Destination MAC": "dst_mac",
-    "Source IP": "src_ip",
-    "Destination IP": "dst_ip",
-    "Source Domain": "src_domain",
-    "Destination Domain": "dst_domain",
-    "Source Port": "src_port",
-    "Destination Port": "dst_port",
-    "Protocol": "protocol",
-    "Packet Size": "length",
-    "DNS Query": "dns_query",
-    "HTTP Payload": "http_payload"
-}
+# Optional field selection
+st.sidebar.header("📝 Fields to Display")
+fields = ["Websites Visited", "Unique IPs", "DNS Queries", "Protocol Stats", "Top Talkers"]
+selected_fields = [f for f in fields if st.sidebar.checkbox(f, value=False)]
 
-st.sidebar.markdown("✅ **Select fields to display/export**")
+# New Time Filter
+st.sidebar.header("⏳ Display Data For")
+time_filter = st.sidebar.selectbox(
+    "Time Range",
+    ["Show All", "Last 5 minutes", "Last 30 minutes", "Last 1 hour", "Last 1 day"]
+)
 
-selected_display_fields = []
-for label in available_fields.keys():
-    if st.sidebar.checkbox(label, value=False):
-        selected_display_fields.append(label)
-
-# Continuous monitoring settings
-st.sidebar.header("⚡ Continuous Monitor Settings")
-refresh_interval = st.sidebar.number_input("🔄 Dashboard Refresh Interval (seconds)", min_value=1, max_value=10, value=2, step=1)
-
-# Custom time filter
-st.sidebar.markdown("⏱️ **Display Packets for Custom Time Range**")
-time_unit = st.sidebar.selectbox("Time Unit", ["Minutes", "Hours"])
-time_value = st.sidebar.number_input("Enter Value", min_value=1, value=5, step=1)
-show_all = st.sidebar.checkbox("Show All Packets", value=False)
-
-if "monitoring" not in st.session_state:
-    st.session_state["monitoring"] = False
-
-if st.sidebar.button("🚀 Start Continuous Monitoring"):
-    continuous_sniffing()
-    st.session_state["monitoring"] = True
-    st.success("Continuous monitoring started.")
-
-if "packets" not in st.session_state:
-    st.session_state["packets"] = []
-
-if st.button("🛑 Stop Continuous Monitoring"):
-    st.session_state["monitoring"] = False
-    st.warning("Continuous monitoring stopped. Data remains visible.")
-
-
-# Function to filter by custom time
-def filter_by_time(packets):
-    if show_all:
-        return packets
+def filter_by_time(connections):
+    if time_filter == "Show All":
+        return connections
     cutoff = datetime.now()
-    if time_unit == "Minutes":
-        cutoff -= timedelta(minutes=time_value)
-    elif time_unit == "Hours":
-        cutoff -= timedelta(hours=time_value)
-    return [pkt for pkt in packets if datetime.strptime(pkt['timestamp'], "%Y-%m-%d %H:%M:%S") >= cutoff]
+    if time_filter == "Last 5 minutes":
+        cutoff -= timedelta(minutes=5)
+    elif time_filter == "Last 30 minutes":
+        cutoff -= timedelta(minutes=30)
+    elif time_filter == "Last 1 hour":
+        cutoff -= timedelta(hours=1)
+    elif time_filter == "Last 1 day":
+        cutoff -= timedelta(days=1)
+    filtered = [
+        conn for conn in connections
+        if 'timestamp' in conn and datetime.fromisoformat(conn['timestamp']) >= cutoff
+    ]
+    return filtered
 
+# Snapshot
+snapshot = monitor.get_snapshot()
 
-# Live Dashboard
-if st.session_state.get("monitoring"):
-    st.info(f"Dashboard auto-refreshing every {refresh_interval} seconds...")
+# Metrics
+col1, col2, col3 = st.columns(3)
+if "Websites Visited" in selected_fields:
+    col1.metric("Websites Visited", len(snapshot['websites_visited']))
+if "Unique IPs" in selected_fields:
+    col2.metric("Unique IPs", len(snapshot['ip_addresses']))
+if "DNS Queries" in selected_fields:
+    col3.metric("DNS Queries", len(snapshot['dns_queries']))
 
-    packet_snapshot = continuous_packets.copy()
-    filtered_packets = filter_by_time(packet_snapshot)
-    df = pd.DataFrame(filtered_packets)
+if "Websites Visited" in selected_fields:
+    st.markdown("### 🌐 Websites Visited")
+    if snapshot['websites_visited']:
+        st.write(snapshot['websites_visited'])
+    else:
+        st.write("No websites detected yet.")
 
-    if not df.empty:
-        df["S.No"] = range(1, len(df) + 1)
+if "Protocol Stats" in selected_fields:
+    st.markdown("### 🔌 Protocol Stats")
+    proto_df = pd.DataFrame(list(snapshot['protocol_stats'].items()), columns=["Protocol", "Connections"])
+    if not proto_df.empty:
+        st.dataframe(proto_df, use_container_width=True)
+    else:
+        st.write("No protocol data yet.")
 
-        for field in available_fields.values():
-            if field not in df.columns:
-                df[field] = "N/A"
+if "Top Talkers" in selected_fields:
+    st.markdown("### 📈 Top Talkers (IPs)")
+    top_ips_raw = sorted(monitor.ip_traffic_bytes.items(), key=lambda x: -x[1])
+    top_ips = pd.DataFrame(top_ips_raw, columns=["IP", "Bytes"])
+    if not top_ips.empty:
+        st.dataframe(top_ips.head(10), use_container_width=True)
+    else:
+        st.write("No traffic data yet.")
 
-        mapped_columns = [available_fields[field] for field in selected_display_fields if field in available_fields]
+# Export section
+st.divider()
+st.subheader("📦 Export Data")
 
-        if mapped_columns:
-            st.dataframe(df[mapped_columns], use_container_width=True)
+col1, col2 = st.columns(2)
+with col1:
+    if st.button("📄 Export CSV"):
+        monitor.generate_summary()
+        csv_path = monitor.summary_file.replace(".json", ".csv")
+        with open(csv_path, "r", encoding="utf-8") as f:
+            csv_data = f.read()
+        st.download_button("⬇️ Download CSV", csv_data, file_name="network_summary.csv", mime="text/csv")
 
-        st.session_state["packets"] = packet_snapshot
+with col2:
+    if st.button("📄 Export PDF"):
+        monitor.generate_summary()
+        pdf_path = monitor.summary_file.replace(".json", ".pdf")
+        with open(pdf_path, "rb") as f:
+            pdf_data = f.read()
+        st.download_button("⬇️ Download PDF", pdf_data, file_name="network_summary.pdf", mime="application/pdf")
 
-        st.divider()
-        st.subheader("📊 Live Packet Analysis")
-
-        proto_stats, data_by_src, top_src, top_dst, ddos_list = analyze_packets(df.to_dict(orient="records"))
-
-        with st.expander("📌 Protocol Usage", expanded=True):
-            st.table(pd.DataFrame(proto_stats.items(), columns=["Protocol", "Count"]))
-
-        with st.expander("📦 Data Volume by Source IP", expanded=True):
-            st.table(pd.DataFrame(data_by_src.items(), columns=["Source IP", "Total Data (bytes)"]))
-
-        with st.expander("🌐 Top Source IPs", expanded=True):
-            st.table(pd.DataFrame(top_src, columns=["Source IP", "Packet Count"]))
-
-        with st.expander("🌐 Top Destination IPs", expanded=True):
-            st.table(pd.DataFrame(top_dst, columns=["Destination IP", "Packet Count"]))
-
-        with st.expander("🚨 Potential DDoS Sources", expanded=True):
-            if ddos_list:
-                st.error(f"Suspicious IPs Detected: {', '.join(ddos_list)}")
-            else:
-                st.success("No DDoS-like activity detected.")
-
-    time.sleep(refresh_interval)
-    st.rerun()
-
-# Results after Stop
-if st.session_state["packets"] and not st.session_state.get("monitoring"):
-    st.divider()
-    st.subheader("📥 Captured Packets Summary")
-
-    filtered_packets = filter_by_time(st.session_state["packets"])
-    df = pd.DataFrame(filtered_packets)
-    df["S.No"] = range(1, len(df) + 1)
-
-    for field in available_fields.values():
-        if field not in df.columns:
-            df[field] = "N/A"
-
-    available_protocols = ["All"] + sorted(df["protocol"].dropna().unique())
-    selected_protocol = st.selectbox("Filter by Protocol", available_protocols)
-
-    all_ips = pd.concat([df["src_ip"], df["dst_ip"]]).dropna().unique()
-    available_ips = ["All"] + sorted(all_ips)
-    selected_ip = st.selectbox("Filter by IP (source or destination)", available_ips)
-
-    filtered_df = df.copy()
-    if selected_protocol != "All":
-        filtered_df = filtered_df[filtered_df["protocol"] == selected_protocol]
-    if selected_ip != "All":
-        filtered_df = filtered_df[(filtered_df["src_ip"] == selected_ip) | (filtered_df["dst_ip"] == selected_ip)]
-
-    mapped_columns = [available_fields[field] for field in selected_display_fields if field in available_fields]
-    st.dataframe(filtered_df[mapped_columns], use_container_width=True)
-
-    download_link = generate_csv_download_link(filtered_df[mapped_columns].to_dict(orient="records"), filename="filtered_packets.csv")
-    st.markdown(download_link, unsafe_allow_html=True)
-
-    st.divider()
-    st.subheader("📊 Packet Analysis Results (Filtered Packets)")
-
-    proto_stats, data_by_src, top_src, top_dst, ddos_list = analyze_packets(filtered_df.to_dict(orient="records"))
-    save_analysis_to_csv(proto_stats, data_by_src, top_src, top_dst, ddos_list)
-
-    with st.expander("📌 Protocol Usage", expanded=True):
-        st.table(pd.DataFrame(proto_stats.items(), columns=["Protocol", "Count"]))
-
-    with st.expander("📦 Data Volume by Source IP", expanded=True):
-        st.table(pd.DataFrame(data_by_src.items(), columns=["Source IP", "Total Data (bytes)"]))
-
-    with st.expander("🌐 Top Source IPs", expanded=True):
-        st.table(pd.DataFrame(top_src, columns=["Source IP", "Packet Count"]))
-
-    with st.expander("🌐 Top Destination IPs", expanded=True):
-        st.table(pd.DataFrame(top_dst, columns=["Destination IP", "Packet Count"]))
-
-    with st.expander("🚨 Potential DDoS Sources", expanded=True):
-        if ddos_list:
-            st.error(f"Suspicious IPs Detected: {', '.join(ddos_list)}")
-        else:
-            st.success("No DDoS-like activity detected.")
+# Auto-refresh the page
+time.sleep(refresh_interval)
+st.rerun()
