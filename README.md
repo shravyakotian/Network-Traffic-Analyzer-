@@ -70,7 +70,7 @@ python -m venv .venv
 pip install -r requirements.txt
 
 # Run the Streamlit Dashboard
-streamlit run appui.py
+streamlit run app_ui.py
 ```
 
 ---
