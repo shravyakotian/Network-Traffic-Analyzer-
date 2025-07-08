@@ -4,11 +4,11 @@ import pandas as pd
 import time
 from datetime import datetime, timedelta
 import threading
+import os
 
 st.set_page_config(page_title="Enhanced Network Traffic Monitor", layout="wide")
 
 st.title("🌐 Enhanced Network Traffic Monitor")
-#st.caption("Monitor live browser & network traffic, QUIC, DNS, HTTP, and view top talkers.")
 st.divider()
 
 if 'monitor' not in st.session_state:
@@ -105,6 +105,25 @@ if "Top Talkers" in selected_fields:
         st.dataframe(top_ips.head(10), use_container_width=True)
     else:
         st.write("No traffic data yet.")
+
+# Show HTTP Requests
+if snapshot.get('http_requests'):
+    st.markdown("### 🌐 Captured HTTP Requests")
+    df_http = pd.DataFrame(snapshot['http_requests'])
+    if not df_http.empty:
+        st.dataframe(df_http, use_container_width=True)
+    else:
+        st.write("No HTTP requests captured yet.")
+
+# Show Activity Log
+st.markdown("### 📜 Activity Log")
+
+if os.path.exists(monitor.log_file):
+    with open(monitor.log_file, "r", encoding="utf-8") as logf:
+        logs = logf.read()
+    st.text_area("Log Output", logs, height=300)
+else:
+    st.info("Log file not created yet. Start monitoring to generate logs.")
 
 # Export section
 st.divider()
