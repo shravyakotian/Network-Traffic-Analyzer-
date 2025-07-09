@@ -132,12 +132,77 @@ class EnhancedNetworkMonitor:
             'quic_connections': len(self.quic_connections),
         }
 
+    import csv
+
     def export_csv(self, summary):
         csv_file = self.summary_file.replace('.json', '.csv')
-        with open(csv_file, 'w', newline='', encoding='utf-8') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow(['Timestamp', 'Process/Browser', 'Remote IP', 'Remote Port', 'Protocol', 'Domain'])
 
+        with open(csv_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+
+            # Session Info
+            writer.writerow(['==== SESSION INFO ===='])
+            session = summary['session_info']
+            writer.writerow(['Field', 'Value'])
+            writer.writerow(['Start Time', session.get('start_time')])
+            writer.writerow(['End Time', session.get('end_time')])
+            writer.writerow(['Duration (seconds)', session.get('duration_seconds')])
+            writer.writerow(['Duration (minutes)', session.get('duration_minutes')])
+            writer.writerow([])
+
+            # Bandwidth
+            writer.writerow(['==== BANDWIDTH ===='])
+            bw = summary['bandwidth']
+            writer.writerow(['Field', 'Value'])
+            writer.writerow(['Total Bytes', bw['total_bytes']])
+            writer.writerow(['Total KB', bw['total_kilobytes']])
+            writer.writerow(['Total MB', bw['total_megabytes']])
+            writer.writerow([])
+            writer.writerow(['Protocol', 'Bytes'])
+            for proto, b in bw['protocol_bytes'].items():
+                writer.writerow([proto, b])
+            writer.writerow([])
+            writer.writerow(['IP', 'Bytes'])
+            for ip, b in bw['per_ip_traffic'].items():
+                writer.writerow([ip, b])
+            writer.writerow([])
+
+            # Detection Results
+            writer.writerow(['==== DETECTION RESULTS ===='])
+            writer.writerow(['Category', 'Value'])
+            for site in summary['detection_results']['websites_visited']:
+                writer.writerow(['Website Visited', site])
+            for domain in summary['detection_results']['domains_resolved']:
+                writer.writerow(['Domain Resolved', domain])
+            for ip in summary['detection_results']['ip_addresses']:
+                writer.writerow(['IP Address', ip])
+            for dns in summary['detection_results']['dns_queries']:
+                writer.writerow(['DNS Query', dns])
+            writer.writerow([])
+
+            # Top Talkers
+            writer.writerow(['==== TOP TALKERS ===='])
+            writer.writerow(['IP Address', 'Bytes'])
+            for talker in summary['statistics']['top_talkers']:
+                writer.writerow([talker['ip'], talker['bytes']])
+            writer.writerow([])
+
+            # HTTP Requests
+            writer.writerow(['==== HTTP REQUESTS ===='])
+            writer.writerow(['Timestamp', 'Method', 'Host', 'Path', 'Status Code'])
+            for req in summary['connections']['http_requests']:
+                writer.writerow([
+                    req.get('timestamp'),
+                    req.get('method'),
+                    req.get('host'),
+                    req.get('path'),
+                    req.get('status_code')
+                ])
+            writer.writerow([])
+
+            # All Connections
+            writer.writerow(['==== ALL CONNECTIONS ===='])
+            writer.writerow(['Timestamp', 'Process/Browser', 'Remote IP', 'Remote Port', 'Protocol', 'Domain'])
             for conn in summary['connections']['all_connections']:
                 writer.writerow([
                     conn.get('timestamp'),
@@ -147,17 +212,95 @@ class EnhancedNetworkMonitor:
                     conn.get('protocol'),
                     conn.get('domain')
                 ])
+
         print(f"📄 CSV summary saved to: {csv_file}")
+
+    from fpdf import FPDF
 
     def export_pdf(self, text_summary):
         pdf_file = self.summary_file.replace('.json', '.pdf')
-        pdf = FPDF()
+
+        class PDF(FPDF):
+            def footer(self):
+                self.set_y(-15)
+                self.set_font("Arial", "I", 8)
+                self.cell(0, 10, f"Page {self.page_no()}", 0, 0, "C")
+
+        pdf = PDF()
         pdf.add_page()
         pdf.set_auto_page_break(auto=True, margin=15)
+
+        # Title
+        pdf.set_font("Arial", "B", 14)
+        pdf.set_text_color(0, 0, 128)  # Dark blue
+        pdf.cell(0, 10, "Enhanced Network Traffic Summary", ln=True, align="C")
+        pdf.ln(5)
+
+        pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", size=10)
 
+        current_section = ""
+        table_data = []
+
+        def render_table(table_data):
+            pdf.set_font("Arial", "B", 10)
+            col_width = pdf.w / 2.5  # adjust as needed
+            row_height = 8
+            for row in table_data:
+                for item in row:
+                    pdf.cell(col_width, row_height, txt=item, border=1)
+                pdf.ln(row_height)
+            pdf.ln(2)
+
         for line in text_summary.strip().split('\n'):
-            pdf.multi_cell(0, 10, line)
+            stripped = line.strip()
+            # Section headers
+            if stripped.startswith(("====", "📊", "📅", "🌐", "⚡", "🔍", "📦", "📈", "👑")):
+                # render previous table if any
+                if table_data:
+                    render_table(table_data)
+                    table_data = []
+
+                current_section = stripped
+                pdf.set_font("Arial", "B", 11)
+                pdf.set_text_color(0, 0, 128)
+                pdf.multi_cell(0, 8, current_section)
+                pdf.set_text_color(0, 0, 0)
+                pdf.set_font("Arial", size=10)
+
+            # Capture tabular data under certain sections
+            elif current_section.startswith("👑") and stripped.startswith(tuple("0123456789")):
+                # 👑 Top Talkers: ip: bytes
+                parts = stripped.split(":")
+                if len(parts) == 2:
+                    if not table_data:
+                        table_data.append(["IP", "Bytes"])
+                    table_data.append([parts[0].strip(), parts[1].strip()])
+
+            elif current_section.startswith("📈") and stripped.startswith(tuple("0123456789")):
+                # 📈 Per-IP Traffic: ip: bytes
+                parts = stripped.split(":")
+                if len(parts) == 2:
+                    if not table_data:
+                        table_data.append(["IP", "Bytes"])
+                    table_data.append([parts[0].strip(), parts[1].strip()])
+
+            elif current_section.startswith("🌐") and stripped.startswith("✅"):
+                # 🌐 Websites Visited
+                site = stripped.lstrip("✅").strip()
+                if not table_data:
+                    table_data.append(["Website"])
+                table_data.append([site])
+
+            else:
+                if table_data and stripped == "":
+                    render_table(table_data)
+                    table_data = []
+                pdf.multi_cell(0, 8, stripped)
+
+        if table_data:
+            render_table(table_data)
+
         pdf.output(pdf_file)
         print(f"📄 PDF summary saved to: {pdf_file}")
 
@@ -868,7 +1011,6 @@ class EnhancedNetworkMonitor:
             text += "   ❌ No data\n"
 
         return text
-
 
 def main():
     print("🚀 Enhanced Network Traffic Monitor")
