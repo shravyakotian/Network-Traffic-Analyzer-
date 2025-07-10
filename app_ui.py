@@ -2,7 +2,7 @@ import streamlit as st
 from enhanced_network_monitor import EnhancedNetworkMonitor
 import pandas as pd
 import plotly.express as px
-import time
+from streamlit_autorefresh import st_autorefresh
 from datetime import datetime, timedelta
 import threading
 import os
@@ -37,7 +37,6 @@ with st.sidebar:
         min_value=1, max_value=10, value=2
     )
 
-    # 🧹 Perform start/stop actions
     if start_stop == "Start 🚀" and not st.session_state.monitoring:
         st.session_state.monitoring = True
         monitor.running = True
@@ -52,7 +51,6 @@ with st.sidebar:
         st.session_state.monitor_thread_started = False
         st.warning("🛑 Monitoring stopped.")
 
-    # 🟢 Show updated status *after* start/stop logic
     st.markdown(f"### 🚦 Status: {'🟢 Active' if st.session_state.monitoring else '🔴 Stopped'}")
 
     st.divider()
@@ -112,10 +110,8 @@ def show_empty(message):
 
 snapshot = monitor.get_snapshot()
 
-# Spinner if running
 if st.session_state.monitoring:
-    with st.spinner("Monitoring in progress..."):
-        st.info(f"Monitoring is active. Refreshes every {refresh_interval} seconds.")
+    st.info(f"Monitoring is active. Refreshes every {refresh_interval} seconds.")
 else:
     st.info("Monitoring is stopped. Start to see live stats.")
 
@@ -185,12 +181,16 @@ if snapshot.get('http_requests'):
     else:
         show_empty("No HTTP requests captured yet.")
 
-# Activity Log
+# ===============================
+# 📜 Activity Log (FIX: Newest First)
+# ===============================
+
 with st.expander("📜 Activity Log", expanded=False):
     if os.path.exists(monitor.log_file):
         with open(monitor.log_file, "r", encoding="utf-8") as logf:
             logs = logf.read()
-        logs = "\n".join(logs.splitlines()[-500:])
+        # Newest first
+        logs = "\n".join(reversed(logs.splitlines()[-500:]))
         st.text_area("Log Output", logs, height=300, max_chars=10000, key="log_viewer")
     else:
         st.info("Log file not created yet. Start monitoring to generate logs.")
@@ -224,5 +224,4 @@ with col2:
 # ========================
 
 if st.session_state.monitoring:
-    time.sleep(refresh_interval)
-    st.rerun()
+    st_autorefresh(interval=refresh_interval * 1000, key="autorefresh")
