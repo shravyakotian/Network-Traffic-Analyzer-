@@ -87,7 +87,7 @@ pip install -r requirements.txt
 python enhanced_network_monitor.py
 
 # Run the Streamlit dashboard
-streamlit run ui_app.py
+streamlit run app_ui.py
 ```
 
 ---
